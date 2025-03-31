@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نبرد نهایی: میرزازاده vs ایزدفر</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            font-family: 'Arial', sans-serif;
+            cursor: crosshair;
+            user-select: none;
+        }
+        #gameCanvas {
+            display: block;
+            margin: 20px auto;
+            background-image: url('https://www.dropbox.com/scl/fi/ldjty5aao135r47ftng7w/images.jpg?rlkey=kzsu2tbho9xg7ki2jxzlc7tq4&st=0ztw1pk8&dl=1');
+            background-size: cover;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        #gameInfo {
+            color: white;
+            text-align: center;
+            padding: 15px;
+            font-size: 22px;
+            background-color: rgba(0, 0, 0, 0.7);
+            margin: 10px auto;
+            width: 800px;
+            border-radius: 10px;
+        }
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            display: none;
+            z-index: 100;
+            width: 500px;
+            box-shadow: 0 0 30px rgba(255,255,255,0.2);
+        }
+        .game-over h1 {
+            font-size: 42px;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+        .game-over p {
+            font-size: 24px;
+            margin-top: 20px;
+        }
+        .confetti {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameInfo">
+        سلامت آقای میرزازاده: <span id="playerHealth">100</span> | 
+        سلامت آقای ایزدفر: <span id="enemyHealth">100</span>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="gameOver" class="game-over">
+        <h1 id="resultText"></h1>
+        <p>برای شروع مجدد Enter را بزنید</p>
+    </div>
+
+    <script>
+        // عناصر بازی
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const playerHealthEl = document.getElementById('playerHealth');
+        const enemyHealthEl = document.getElementById('enemyHealth');
+        const gameOverEl = document.getElementById('gameOver');
+        const resultTextEl = document.getElementById('resultText');
+
+        // تصاویر بازی
+        const images = {
+            player: new Image(),
+            enemy: new Image(),
+            playerBullet: new Image(),
+            enemyBullet: new Image(),
+            background: new Image()
+        };
+
+        // بارگذاری تصاویر
+        images.player.src = 'https://www.dropbox.com/scl/fi/81uhhp16tvav7lroqysim/player.png?rlkey=5sfcisnzwjjyoc3jbqevt9w21&st=8ggqqfaw&dl=1';
+        images.enemy.src = 'https://www.dropbox.com/scl/fi/aq7jej7lx4ivvyyn0xud0/enemy.png?rlkey=ey8qbl1lm9237aqh613fse8mw&st=6o8zsquo&dl=1';
+        images.background.src = 'https://img.freepik.com/free-vector/comic-style-versus-vs-battle-background_1017-23767.jpg?t=st=1743436151~exp=1743439751~hmac=2ca7c4d8c25f51902948eb26cce12324d717a55c3b3e99311246138c45de0800&w=1380';
+        images.playerBullet.src = 'https://www.dropbox.com/scl/fi/xpjdral0g4vrgcp8875yh/imeages.png?rlkey=2mciz8v8tmk6crqohk2hidma3&st=5ws5212g&dl=1';
+        images.enemyBullet.src = 'https://www.dropbox.com/scl/fi/l8sqidp2u3f0r0ieq7kt4/images.png?rlkey=vk07u8tpfpvt26zf353qysrli&st=umarb41p&dl=1';
+
+        // وضعیت بازی
+        const gameState = {
+            player: {
+                x: 100,
+                y: 300,
+                width: 70,
+                height: 70,
+                speed: 7,
+                health: 100,
+                bullets: [],
+                lastShot: 0,
+                shotDelay: 400
+            },
+            enemy: {
+                x: 700,
+                y: 300,
+                width: 70,
+                height: 70,
+                speed: 5,
+                health: 100,
+                bullets: [],
+                lastShot: 0,
+                shotDelay: 1200,
+                moveTimer: 0,
+                moveInterval: 50,
+                direction: 0,
+                targetY: 300
+            },
+            keys: {},
+            gameOver: false,
+            confetti: [],
+            lastTime: 0
+        };
+
+        // کنترل‌های صفحه کلید
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            gameState.keys[key] = true;
+            
+            // شروع مجدد بازی با اینتر
+            if (key === 'enter' && gameState.gameOver) {
+                restartGame();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            gameState.keys[key] = false;
+        });
+
+        // تیراندازی با کلیک ماوس
+        canvas.addEventListener('click', (e) => {
+            if (!gameState.gameOver) {
+                const now = Date.now();
+                if (now - gameState.player.lastShot > gameState.player.shotDelay) {
+                    shootPlayer();
+                    gameState.player.lastShot = now;
+                }
+            }
+        });
+
+        function shootPlayer() {
+            gameState.player.bullets.push({
+                x: gameState.player.x + gameState.player.width,
+                y: gameState.player.y + gameState.player.height / 2 - 15,
+                width: 70,
+                height: 50,
+                speed: 15
+            });
+        }
+
+        function shootEnemy() {
+            gameState.enemy.bullets.push({
+                x: gameState.enemy.x - 20,
+                y: gameState.enemy.y + gameState.enemy.height / 2 - 15,
+                width: 70,
+                height: 50,
+                speed: 12
+            });
+        }
+
+        function update(timestamp) {
+            if (gameState.gameOver) return;
+
+            const deltaTime = timestamp - gameState.lastTime;
+            gameState.lastTime = timestamp;
+
+            // حرکت بازیکن با W و S
+            if (gameState.keys['w'] || gameState.keys['arrowup']) {
+                gameState.player.y = Math.max(0, gameState.player.y - gameState.player.speed);
+            }
+            if (gameState.keys['s'] || gameState.keys['arrowdown']) {
+                gameState.player.y = Math.min(canvas.height - gameState.player.height, 
+                                           gameState.player.y + gameState.player.speed);
+            }
+
+            // هوش مصنوعی پیشرفته برای دشمن
+            gameState.enemy.moveTimer += deltaTime;
+            
+            if (gameState.enemy.moveTimer >= gameState.enemy.moveInterval) {
+                gameState.enemy.moveTimer = 0;
+                
+                // تغییر هدف به صورت نرم
+                if (Math.random() < 0.3) {
+                    gameState.enemy.targetY = Math.random() * (canvas.height - gameState.enemy.height);
+                } else {
+                    // دنبال کردن بازیکن با احتمال بیشتر
+                    gameState.enemy.targetY = gameState.player.y;
+                }
+            }
+
+            // حرکت نرم دشمن به سمت هدف
+            const dy = gameState.enemy.targetY - gameState.enemy.y;
+            gameState.enemy.y += dy * 0.05;
+
+            // محدود کردن موقعیت دشمن
+            gameState.enemy.y = Math.max(0, Math.min(canvas.height - gameState.enemy.height, gameState.enemy.y));
+
+            // تیراندازی دشمن
+            const now = Date.now();
+            if (now - gameState.enemy.lastShot > gameState.enemy.shotDelay) {
+                const playerInLine = Math.abs(
+                    (gameState.player.y + gameState.player.height/2) - 
+                    (gameState.enemy.y + gameState.enemy.height/2)
+                ) < 100;
+                
+                if (playerInLine || Math.random() < 0.5) {
+                    shootEnemy();
+                    gameState.enemy.lastShot = now;
+                }
+            }
+
+            // حرکت تیرها
+            gameState.player.bullets.forEach(bullet => {
+                bullet.x += bullet.speed;
+            });
+
+            gameState.enemy.bullets.forEach(bullet => {
+                bullet.x -= bullet.speed;
+            });
+
+            // تشخیص برخورد تیرها
+            checkCollisions();
+
+            // حذف تیرهای خارج از صفحه
+            gameState.player.bullets = gameState.player.bullets.filter(bullet => 
+                bullet.x < canvas.width + 50);
+                
+            gameState.enemy.bullets = gameState.enemy.bullets.filter(bullet => 
+                bullet.x > -50);
+
+            // بررسی پایان بازی
+            if (gameState.player.health <= 0 || gameState.enemy.health <= 0) {
+                endGame();
+            }
+
+            // به روزرسانی نمایش سلامت
+            playerHealthEl.textContent = gameState.player.health;
+            enemyHealthEl.textContent = gameState.enemy.health;
+        }
+
+        function checkCollisions() {
+            // تیرهای بازیکن به دشمن
+            gameState.player.bullets.forEach((bullet, index) => {
+                if (isColliding(bullet, gameState.enemy)) {
+                    gameState.enemy.health -= 12;
+                    gameState.player.bullets.splice(index, 1);
+                    createHitEffect(bullet.x, bullet.y, '#00ff00');
+                }
+            });
+
+            // تیرهای دشمن به بازیکن
+            gameState.enemy.bullets.forEach((bullet, index) => {
+                if (isColliding(bullet, gameState.player)) {
+                    gameState.player.health -= 10;
+                    gameState.enemy.bullets.splice(index, 1);
+                    createHitEffect(bullet.x, bullet.y, '#ff0000');
+                }
+            });
+        }
+
+        function isColliding(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        function createHitEffect(x, y, color) {
+            for (let i = 0; i < 10; i++) {
+                gameState.confetti.push({
+                    x: x,
+                    y: y,
+                    color: color,
+                    size: Math.random() * 8 + 4,
+                    speedX: (Math.random() - 0.5) * 10,
+                    speedY: (Math.random() - 0.5) * 10,
+                    life: 30
+                });
+            }
+        }
+
+        function createConfetti() {
+            for (let i = 0; i < 300; i++) {
+                gameState.confetti.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * -100,
+                    color: `hsl(${Math.random() * 360}, 100%, 50%)`,
+                    size: Math.random() * 15 + 5,
+                    speedX: (Math.random() - 0.5) * 4,
+                    speedY: Math.random() * 8 + 4,
+                    rotation: Math.random() * Math.PI * 2,
+                    rotationSpeed: (Math.random() - 0.5) * 0.2,
+                    life: 100 + Math.random() * 100
+                });
+            }
+        }
+
+        function updateConfetti() {
+            for (let i = gameState.confetti.length - 1; i >= 0; i--) {
+                const c = gameState.confetti[i];
+                c.x += c.speedX;
+                c.y += c.speedY;
+                c.rotation += c.rotationSpeed;
+                c.life--;
+                
+                if (c.life <= 0) {
+                    gameState.confetti.splice(i, 1);
+                }
+            }
+        }
+
+        function drawConfetti() {
+            gameState.confetti.forEach(c => {
+                ctx.save();
+                ctx.translate(c.x, c.y);
+                ctx.rotate(c.rotation);
+                ctx.fillStyle = c.color;
+                ctx.fillRect(-c.size/2, -c.size/2, c.size, c.size);
+                ctx.restore();
+            });
+        }
+
+        function endGame() {
+            gameState.gameOver = true;
+            createConfetti();
+            
+            if (gameState.player.health <= 0) {
+                resultTextEl.textContent = 'آقای ایزدفر برنده شد!';
+            } else {
+                resultTextEl.textContent = 'آفرین! شما آقای ایزدفر را شکست دادید';
+            }
+            
+            gameOverEl.style.display = 'block';
+        }
+
+        function draw() {
+            // رسم پس‌زمینه
+            ctx.drawImage(images.background, 0, 0, canvas.width, canvas.height);
+
+            // رسم بازیکن
+            ctx.drawImage(images.player, 
+                         gameState.player.x, 
+                         gameState.player.y, 
+                         gameState.player.width, 
+                         gameState.player.height);
+
+            // رسم دشمن
+            ctx.drawImage(images.enemy, 
+                         gameState.enemy.x, 
+                         gameState.enemy.y, 
+                         gameState.enemy.width, 
+                         gameState.enemy.height);
+
+            // رسم تیرهای بازیکن
+            gameState.player.bullets.forEach(bullet => {
+                ctx.drawImage(images.playerBullet, bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+
+            // رسم تیرهای دشمن
+            gameState.enemy.bullets.forEach(bullet => {
+                ctx.drawImage(images.enemyBullet, bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+
+            // نمایش فشفشه
+            updateConfetti();
+            drawConfetti();
+        }
+
+        function restartGame() {
+            gameState.player = {
+                ...gameState.player,
+                x: 100,
+                y: 300,
+                health: 100,
+                bullets: [],
+                lastShot: 0
+            };
+            gameState.enemy = {
+                ...gameState.enemy,
+                x: 700,
+                y: 300,
+                health: 100,
+                bullets: [],
+                targetY: 300,
+                lastShot: 0
+            };
+            gameState.gameOver = false;
+            gameState.confetti = [];
+            gameOverEl.style.display = 'none';
+        }
+
+        // حلقه بازی
+        function gameLoop(timestamp) {
+            update(timestamp);
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // شروع بازی پس از بارگذاری تصاویر
+        let imagesLoaded = 0;
+        function checkImagesLoaded() {
+            imagesLoaded++;
+            if (imagesLoaded === 5) {
+                // تنظیم موقعیت اولیه دشمن
+                gameState.enemy.targetY = gameState.enemy.y;
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        images.player.onload = checkImagesLoaded;
+        images.enemy.onload = checkImagesLoaded;
+        images.background.onload = checkImagesLoaded;
+        images.playerBullet.onload = checkImagesLoaded;
+        images.enemyBullet.onload = checkImagesLoaded;
+        
+        images.player.onerror = () => {
+            console.log('خطا در بارگذاری تصویر بازیکن');
+            checkImagesLoaded();
+        };
+        images.enemy.onerror = () => {
+            console.log('خطا در بارگذاری تصویر دشمن');
+            checkImagesLoaded();
+        };
+        images.background.onerror = () => {
+            console.log('خطا در بارگذاری تصویر پس‌زمینه');
+            checkImagesLoaded();
+        };
+        images.playerBullet.onerror = () => {
+            console.log('خطا در بارگذاری تصویر تیر بازیکن');
+            checkImagesLoaded();
+        };
+        images.enemyBullet.onerror = () => {
+            console.log('خطا در بارگذاری تصویر تیر دشمن');
+            checkImagesLoaded();
+        };
+    </script>
+</body>
+</html>
+<style>
+    /* استایل‌های کنترل موبایل - نسخه نهایی */
+    .mobile-control {
+      display: none;
+      position: fixed;
+      z-index: 100;
+      pointer-events: auto;
+      user-select: none;
+    }
+  
+    #direction-btns {
+  left: 560px;
+  bottom: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+#up-btn {
+  transform: translateY(-60px); /* بالا بردن دکمه بالا */
+}
+
+#down-btn {
+  transform: translateY(60px); /* پایین آوردن دکمه پایین */
+}
+  
+    #up-btn, #down-btn {
+      width: 100px;
+      height: 100px;
+      background-color: rgba(0, 0, 255, 0.5);
+      border-radius: 30px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      font-size: 40px;
+      border: 2px solid white;
+    }
+  
+    #fire-btn {
+      right: -400px;
+      bottom: 130px;
+      width: 80px;
+      height: 80px;
+      background-color: rgba(255, 0, 0, 0.5);
+      border-radius: 50%;
+      background-image: url('https://cdn-icons-png.flaticon.com/512/785/785116.png');
+      background-size: 50%;
+      background-position: center;
+      background-repeat: no-repeat;
+      border: 2px solid white;
+    }
+  
+    #enter-btn {
+      bottom: 20px;
+      left: 100%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 60px;
+      background-color: rgba(0, 255, 0, 0.5);
+      border-radius: 30px;
+      color: white;
+      font-size: 18px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 2px solid white;
+    }
+  
+    /* فقط در دستگاه‌های لمسی نمایش داده شود */
+    @media (hover: none) and (pointer: coarse) {
+      .mobile-control {
+        display: flex;
+      }
+    }
+  </style>
+  
+  <!-- اضافه کردن این HTML قبل از بسته شدن تگ body -->
+  <div id="direction-btns" class="mobile-control">
+    <div id="up-btn" class="mobile-control">↑</div>
+    <div id="down-btn" class="mobile-control">↓</div>
+  </div>
+  <div id="fire-btn" class="mobile-control"></div>
+  <div id="enter-btn" class="mobile-control">ENTER</div>
+  
+  <script>
+  // اضافه کردن این کد به اسکریپت بازی
+  
+  // تشخیص موبایل
+  const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  
+  if (isMobile) {
+    // تنظیم کنترل‌های لمسی
+    const upBtn = document.getElementById('up-btn');
+    const downBtn = document.getElementById('down-btn');
+    const fireBtn = document.getElementById('fire-btn');
+    const enterBtn = document.getElementById('enter-btn');
+    
+    // حرکت بالا
+    const startMoveUp = (e) => {
+      if (e) e.preventDefault();
+      gameState.keys['w'] = true;
+    };
+    
+    const stopMoveUp = (e) => {
+      if (e) e.preventDefault();
+      gameState.keys['w'] = false;
+    };
+    
+    // حرکت پایین
+    const startMoveDown = (e) => {
+      if (e) e.preventDefault();
+      gameState.keys['s'] = true;
+    };
+    
+    const stopMoveDown = (e) => {
+      if (e) e.preventDefault();
+      gameState.keys['s'] = false;
+    };
+    
+    // تیراندازی
+    const fire = (e) => {
+      if (e) e.preventDefault();
+      const now = Date.now();
+      if (now - gameState.player.lastShot > gameState.player.shotDelay) {
+        shootPlayer();
+        gameState.player.lastShot = now;
+      }
+    };
+    
+    // شروع مجدد
+    const enter = (e) => {
+      if (e) e.preventDefault();
+      if (gameState.gameOver) {
+        restartGame();
+      }
+    };
+    
+    // رویدادهای لمسی
+    upBtn.addEventListener('touchstart', startMoveUp);
+    upBtn.addEventListener('touchend', stopMoveUp);
+    downBtn.addEventListener('touchstart', startMoveDown);
+    downBtn.addEventListener('touchend', stopMoveDown);
+    fireBtn.addEventListener('touchstart', fire);
+    enterBtn.addEventListener('touchstart', enter);
+    
+    // رویدادهای کلیک برای تست در دسکتاپ
+    upBtn.addEventListener('mousedown', startMoveUp);
+    upBtn.addEventListener('mouseup', stopMoveUp);
+    downBtn.addEventListener('mousedown', startMoveDown);
+    downBtn.addEventListener('mouseup', stopMoveDown);
+    fireBtn.addEventListener('click', fire);
+    enterBtn.addEventListener('click', enter);
+    
+    // تنظیمات مخصوص موبایل
+    function resizeForMobile() {
+      const controlsHeight = 120;
+      const windowHeight = window.innerHeight;
+      
+      canvas.width = Math.min(window.innerWidth, 800);
+      canvas.height = windowHeight - controlsHeight;
+      
+      // تغییر اندازه متناسب
+      const scaleFactor = Math.min(window.innerWidth / 800, (windowHeight - controlsHeight) / 600);
+      const fontSize = Math.max(16, 16 * scaleFactor);
+      
+      document.getElementById('gameInfo').style.fontSize = `${fontSize}px`;
+    }
+    
+    resizeForMobile();
+    window.addEventListener('resize', resizeForMobile);
+  }
+  </script>
+  <style>
+    /* مخفی کردن پیش‌فرض */
+    #direction-btns, #fire-btn, #enter-btn {
+      display: none;
+    }
+  
+    /* نمایش فقط در موبایل */
+    @media (max-width: 768px), (hover: none) and (pointer: coarse) {
+      #direction-btns {
+        display: flex;
+        position: fixed;
+        left: 560px;
+        bottom: 200px;
+        flex-direction: column;
+        gap: 30px;
+        z-index: 1000;
+      }
+      
+      #fire-btn {
+        display: flex;
+        position: fixed;
+        right: -400px;
+        bottom: 130px;
+        width: 100px;
+        height: 100px;
+      }
+      
+      #enter-btn {
+        display: flex;
+        position: fixed;
+        bottom: 20px;
+        left: 100%;
+        transform: translateX(-50%);
+      }
+    }
+  </style>
